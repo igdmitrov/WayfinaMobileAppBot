@@ -1,0 +1,142 @@
+## Build results
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+.publish/
+_app/
+out/
+
+# VS intermediate
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+.history/
+
+# Rider / IntelliJ
+.idea/
+*.sln.iml
+
+# MonoDevelop / Xamarin Studio
+*.userprefs
+
+# .NET Core / .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# StyleCop
+StyleCopReport.xml
+
+# NCrunch
+*.ncrunch*
+.*crunch*.local.xml
+
+# MSTest test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NUnit
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# xUnit
+xunit-result-*.xml
+
+# Coverlet / coverage
+coverage*.json
+coverage*.xml
+coverage*.info
+*.lcov
+
+# Azure
+*.azurePubxml
+*.pubxml
+*.publishsettings
+
+# IIS
+[Ii][Ii][Ss][Ee]xpress/
+iisexpress.log
+/.vs/iisexpress/
+
+# User-specific files
+*.user
+*.userosscache
+*.userprefs
+*.rsuser
+
+# Resharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# DotCover
+*.dotCover
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+!**/packages/repositories.config
+.nuget/
+.nuget/packages.config
+
+# Paket
+.paket/
+paket-files/
+
+# Azure Functions
+bin/**/publish/
+obj/**/publish/
+local.settings.json
+
+# Entity Framework
+*_i.csp
+*_p.csp
+*_i.dbml
+*_p.dbml
+*.dbmdl
+
+# SQL Server files
+*.mdf
+*.ldf
+
+# Logs
+*.log
+*.tlg
+
+# OS junk
+[Dd]esktop.ini
+[Tt]humbs.db
+ehthumbs.db
+[Dd]S_Store
+Icon?
+
+# Rider plugin caches
+.idea/
+.idea.*
+*.ipr
+*.iws
+
+# Rider solution caches
+.sln.iml
+
+# Dotnet Tools local config
+.dotnet-tools.json
+
+# Publish artifacts
+**/publish/
+dist/
+
+firebase-key.json
