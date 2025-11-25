@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -19,7 +20,7 @@ namespace WayfinaMobileAppBot
 		{
 		}
 
-        public async Task<string?> AddContact(RegistrationModel model)
+        public async Task<(string?, bool)> AddContact(RegistrationModel model)
         {
             var url = $"https://www.zohoapis.com/crm/v3/Contacts";
 
@@ -47,7 +48,7 @@ namespace WayfinaMobileAppBot
 
             if(existsContractId != null)
             {
-                return existsContractId;
+                return (existsContractId, false);
             }
 
             int retryCount = 0;
@@ -74,7 +75,7 @@ namespace WayfinaMobileAppBot
                             if (retryCount >= maxRetryAttempts)
                             {
                                 Console.WriteLine("Max retry attempts reached due to 429 status.");
-                                return null;
+                                return (null, false);
                             }
 
                             await Task.Delay(TimeSpan.FromSeconds(delayBetweenRetriesInSeconds));
@@ -99,10 +100,10 @@ namespace WayfinaMobileAppBot
                         if (doc.RootElement.TryGetProperty("data", out var data) && data.GetArrayLength() > 0)
                         {
                             var details = data[0].GetProperty("details");
-                            return details.GetProperty("id").GetString();
+                            return (details.GetProperty("id").GetString(), true);
                         }
                     }
-                    return null;
+                    return (null, false);
                 }
                 catch (HttpRequestException e)
                 {
@@ -111,7 +112,7 @@ namespace WayfinaMobileAppBot
                 }
             }
 
-            return null;
+            return (null, false);
         }
 
         public async Task AddDealAsync(string contactId, RegistrationModel model, DateTime createdAt, string dealId = "", string stage = "Qualification")
@@ -525,6 +526,8 @@ namespace WayfinaMobileAppBot
                 //Street = model.Location,
                 Country = "Zambia",
                 Lead_Source = "Web",
+                Latitude = model.Latitude.ToString("G17", CultureInfo.InvariantCulture),
+                Longitude = model.Longitude.ToString("G17", CultureInfo.InvariantCulture),
                 Phone = model.Phone
             }
         }

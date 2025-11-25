@@ -46,6 +46,9 @@ namespace WayFinaWebApp.Models
         [Display(Name = "Details")]
         public string Details { get; set; }
 
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+
         public string ToNormalizedZambia()
         {
             var digits = Regex.Replace(this.Phone, @"\D", "");

@@ -7,10 +7,12 @@ namespace WayfinaMobileAppBot;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
+    private readonly IHostApplicationLifetime _lifetime;
 
-    public Worker(ILogger<Worker> logger)
+    public Worker(ILogger<Worker> logger, IHostApplicationLifetime lifetime)
     {
         _logger = logger;
+        _lifetime = lifetime;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -68,11 +70,19 @@ public class Worker : BackgroundService
 
             string farmSize = data.ContainsKey("farmSize") ? data["farmSize"]?.ToString() ?? "" : "";
 
+            GeoPoint location = data.ContainsKey("location") && data["location"] is GeoPoint gp 
+                    ? gp 
+                    : default;
+
+            Console.WriteLine($"Location: ({location.Latitude}, {location.Longitude})");
+
             var dto = new RegistrationModel();
             dto.FirstName = firstName;
             dto.SecondName = secondName;
             dto.Phone = phone;
             dto.SelectedSizeOfFarm = farmSize;
+            dto.Latitude = location.Latitude;
+            dto.Longitude = location.Longitude;
 
             List<ProductEntry> products = new List<ProductEntry>();
 
@@ -111,32 +121,42 @@ public class Worker : BackgroundService
             try
             {
                 var zohoIntegration = new ZohoIntegration();
-                var contactId = zohoIntegration.AddContact(dto).Result;
-                var leadId = await zohoIntegration.AddLeadAsync(contactId, dto, DateTime.UtcNow);
+                var contactRet = zohoIntegration.AddContact(dto).Result;
+                var leadId = await zohoIntegration.AddLeadAsync(contactRet.Item1, dto, DateTime.UtcNow);
 
-                if(String.IsNullOrEmpty(idPhoto) == false)
+                if(contactRet.Item2 == true)
                 {
-                    var photoFile = await DownloadImageAsync(idPhoto);
-                    await zohoIntegration.AttachToContactAsync(contactId, photoFile, "ID_Front.jpg");
-                }
+                    if(String.IsNullOrEmpty(idPhoto) == false)
+                    {
+                        var photoFile = await DownloadImageAsync(idPhoto);
+                        await zohoIntegration.AttachToContactAsync(contactRet.Item1, photoFile, "ID_Front.jpg");
+                    }
 
-                if(String.IsNullOrEmpty(idPhotoBackSide) == false)
-                {
-                    var photoBackSideFile = await DownloadImageAsync(idPhotoBackSide);
-                    await zohoIntegration.AttachToContactAsync(contactId, photoBackSideFile, "ID_Back.jpg");
-                }
+                    if(String.IsNullOrEmpty(idPhotoBackSide) == false)
+                    {
+                        var photoBackSideFile = await DownloadImageAsync(idPhotoBackSide);
+                        await zohoIntegration.AttachToContactAsync(contactRet.Item1, photoBackSideFile, "ID_Back.jpg");
+                    }
 
-                if(String.IsNullOrEmpty(selfiePhoto) == false)
-                {
-                    var selfieFile = await DownloadImageAsync(selfiePhoto);
-                    await zohoIntegration.AttachToContactAsync(contactId, selfieFile, "Selfie.jpg");
+                    if(String.IsNullOrEmpty(selfiePhoto) == false)
+                    {
+                        var selfieFile = await DownloadImageAsync(selfiePhoto);
+                        await zohoIntegration.AttachToContactAsync(contactRet.Item1, selfieFile, "Selfie.jpg");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error integrating with Zoho: {ex.Message}");
             }
+
+            await doc.Reference.UpdateAsync(new Dictionary<string, object>
+            {
+                { "status", "inProgress" }
+            });
         }
+
+        _lifetime.StopApplication();
     }
 
     public async Task<byte[]> DownloadImageAsync(string url)
