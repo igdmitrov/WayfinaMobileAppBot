@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Google.Cloud.Firestore;
+using Microsoft.Extensions.Options;
 using WayFinaWebApp.Models;
 
 namespace WayfinaMobileAppBot;
@@ -8,11 +9,13 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly IHostApplicationLifetime _lifetime;
+    private readonly IOptions<ZohoAppOptions> _optsZoho;
 
-    public Worker(ILogger<Worker> logger, IHostApplicationLifetime lifetime)
+    public Worker(ILogger<Worker> logger, IHostApplicationLifetime lifetime, IOptions<ZohoAppOptions> optsZoho)
     {
         _logger = logger;
         _lifetime = lifetime;
+        _optsZoho = optsZoho;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -70,8 +73,8 @@ public class Worker : BackgroundService
 
             string farmSize = data.ContainsKey("farmSize") ? data["farmSize"]?.ToString() ?? "" : "";
 
-            GeoPoint location = data.ContainsKey("location") && data["location"] is GeoPoint gp 
-                    ? gp 
+            GeoPoint location = data.ContainsKey("location") && data["location"] is GeoPoint gp
+                    ? gp
                     : default;
 
             Console.WriteLine($"Location: ({location.Latitude}, {location.Longitude})");
@@ -104,7 +107,7 @@ public class Worker : BackgroundService
 
                     Console.WriteLine($"fertId={fertilizerId}, qty={quantity}");
 
-                    products.Add(new ProductEntry() { TypesOfFertilizersId = fertilizerId, Quantity = quantity});
+                    products.Add(new ProductEntry() { TypesOfFertilizersId = fertilizerId, Quantity = quantity });
                 }
             }
 
@@ -120,33 +123,63 @@ public class Worker : BackgroundService
 
             try
             {
-                var zohoIntegration = new ZohoIntegration();
+                var zohoIntegration = new ZohoIntegration(_optsZoho.Value);
                 var contactRet = zohoIntegration.AddContact(dto).Result;
                 var leadId = await zohoIntegration.AddLeadAsync(contactRet.Item1, dto, DateTime.UtcNow);
 
-                if(contactRet.Item2 == true)
+                if (contactRet.Item2 == true)
                 {
-                    if(String.IsNullOrEmpty(idPhoto) == false)
+                    if (String.IsNullOrEmpty(idPhoto) == false)
                     {
                         var photoFile = await DownloadImageAsync(idPhoto);
                         await zohoIntegration.AttachToContactAsync(contactRet.Item1, photoFile, "ID_Front.jpg");
                     }
 
-                    if(String.IsNullOrEmpty(idPhotoBackSide) == false)
+                    if (String.IsNullOrEmpty(idPhotoBackSide) == false)
                     {
                         var photoBackSideFile = await DownloadImageAsync(idPhotoBackSide);
                         await zohoIntegration.AttachToContactAsync(contactRet.Item1, photoBackSideFile, "ID_Back.jpg");
                     }
 
-                    if(String.IsNullOrEmpty(selfiePhoto) == false)
+                    if (String.IsNullOrEmpty(selfiePhoto) == false)
                     {
                         var selfieFile = await DownloadImageAsync(selfiePhoto);
                         await zohoIntegration.AttachToContactAsync(contactRet.Item1, selfieFile, "Selfie.jpg");
                     }
                 }
+
+                var msg =
+           $@"<b>🆕 New Registration (MobileApp)</b>
+
+            <b>👤 Farmer</b>
+            • <b>First name:</b> {dto.FirstName}
+            • <b>Second name:</b> {dto.SecondName}
+            • <b>Phone:</b> <code>{dto.ToNormalizedZambia()}</code>
+
+            <b>🚜 Farm</b>
+            • <b>Size (ha):</b> {dto.SelectedSizeOfFarm}
+            • <b>Location:</b> {dto.Location}
+
+            <b>🌱 Crops grown</b>
+            {(dto.SelectedCropsGrown != null && dto.SelectedCropsGrown.Any()
+               ? string.Join("\n", dto.SelectedCropsGrown)
+               : "<i>Not provided</i>")}
+
+            <b>🧪 Fertilizers</b>
+            {(products != null && products.Any()
+               ? string.Join("\n", products.Select(p => $"{p.TypesOfFertilizersId} x{p.Quantity}"))
+               : "<i>Not provided</i>")}
+
+            <b>📝 Details</b>
+            {(string.IsNullOrWhiteSpace(dto.Details)
+               ? "<i>Not provided</i>"
+               : dto.Details)}";
+
+                TelegramNotifier.SendHtmlAsync(msg).Wait();
             }
             catch (Exception ex)
             {
+                TelegramNotifier.SendHtmlAsync($"Zoho CRM from MobileApp: {ex.Message}").Wait();
                 Console.WriteLine($"Error integrating with Zoho: {ex.Message}");
             }
 

@@ -15,26 +15,32 @@ namespace WayfinaMobileAppBot
         private const int delayBetweenRetriesInSeconds = 60;
         private int totalNumberOfCalls = 0;
         private string accessToken = String.Empty;
+        private readonly ZohoAppOptions _optsZoho;
 
-        public ZohoIntegration()
-		{
-		}
+        public ZohoIntegration(ZohoAppOptions optsZoho)
+        {
+            _optsZoho = optsZoho;
+        }
 
         public async Task<(string?, bool)> AddContact(RegistrationModel model)
         {
             var url = $"https://www.zohoapis.com/crm/v3/Contacts";
 
-            var contactData = new
+            var customerData = new
             {
-                data = new[]
+                contact_name = BuildContactName(model),
+                contact_type = "customer",
+                company_name = "Private Person",
+                contact_persons = new[]
                 {
                     new
                     {
-                        Last_Name = model.SecondName ?? "N/A",
-                        First_Name = model.FirstName ?? "N/A",
-                        Phone = model.ToNormalizedZambia(), 
-                        Lead_Source = "Web",
-                        Account_Name = new { id = "6819215000000652101" }
+                        salutation = "Mr.",
+                        first_name = model.FirstName ?? "N/A",
+                        last_name = model.SecondName ?? "N/A",
+                        phone = model.ToNormalizedZambia(),
+                        mobile = model.ToNormalizedZambia(),
+                        is_primary_contact = true
                     }
                 }
             };
@@ -58,13 +64,14 @@ namespace WayfinaMobileAppBot
                 try
                 {
                     totalNumberOfCalls++;
-                    var jsonData = JsonSerializer.Serialize(contactData);
+                    var jsonData = JsonSerializer.Serialize(customerData);
                     var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
 
                     using (var client = new HttpClient())
                     {
                         client.DefaultRequestHeaders.Add("Authorization", $"Zoho-oauthtoken {accessToken}");
-                        HttpResponseMessage response = await client.PostAsync(url, content);
+                        var urlCustomer = $"https://www.zohoapis.com/books/v3/contacts?organization_id={_optsZoho.OrganizationId}";
+                        HttpResponseMessage response = await client.PostAsync(urlCustomer, content);
 
                         // Check for 429 Too Many Requests
                         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
@@ -95,12 +102,23 @@ namespace WayfinaMobileAppBot
                         string json = await response.Content.ReadAsStringAsync();
                         Console.WriteLine($"Response received: {json}");
 
-                        using var doc = JsonDocument.Parse(json);
+                        /*using var doc = JsonDocument.Parse(json);
 
                         if (doc.RootElement.TryGetProperty("data", out var data) && data.GetArrayLength() > 0)
                         {
                             var details = data[0].GetProperty("details");
                             return (details.GetProperty("id").GetString(), true);
+                        }*/
+
+                        var phone = model.Phone;
+
+                        for (int i = 0; i < 12; i++) // 12 * 5s = 60s
+                        {
+                            var contactId = await GetContactIdByPhoneAsync(phone);
+                            if (!string.IsNullOrEmpty(contactId))
+                                return (contactId, true);
+
+                            await Task.Delay(TimeSpan.FromSeconds(5));
                         }
                     }
                     return (null, false);
@@ -113,6 +131,12 @@ namespace WayfinaMobileAppBot
             }
 
             return (null, false);
+        }
+
+        private static string BuildContactName(RegistrationModel model)
+        {
+            var full = $"{model.FarmName} {model.SecondName}".Trim();
+            return string.IsNullOrWhiteSpace(full) ? "N/A" : full;
         }
 
         public async Task AddDealAsync(string contactId, RegistrationModel model, DateTime createdAt, string dealId = "", string stage = "Qualification")
@@ -361,7 +385,7 @@ namespace WayfinaMobileAppBot
 
         private async Task<string> GetAccessToken()
         {
-            var url = "https://accounts.zoho.com/oauth/v2/token?refresh_token=1000.9981dd58a63663260441338c18e13d96.1ad02511750ba2838f982f800e87ed32&client_id=1000.MGX1F2N2IIYAS782G48FHHSSIEX7CU&client_secret=f8e382444ef089aaadc8cd28b89e6933728673f6d7&redirect_uri=http://www.zoho.com/books&grant_type=refresh_token";
+            var url = $"https://accounts.zoho.com/oauth/v2/token?refresh_token={_optsZoho.RefreshToken}&client_id={_optsZoho.ClientId}&client_secret={_optsZoho.ClientSecret}&redirect_uri=http://www.zoho.com/books&grant_type=refresh_token";
 
             try
             {
