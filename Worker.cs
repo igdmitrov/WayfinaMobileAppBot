@@ -8,13 +8,12 @@ namespace WayfinaMobileAppBot;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly IHostApplicationLifetime _lifetime;
     private readonly IOptions<ZohoAppOptions> _optsZoho;
+    private readonly TimeSpan _interval = TimeSpan.FromMinutes(5);
 
-    public Worker(ILogger<Worker> logger, IHostApplicationLifetime lifetime, IOptions<ZohoAppOptions> optsZoho)
+    public Worker(ILogger<Worker> logger, IOptions<ZohoAppOptions> optsZoho)
     {
         _logger = logger;
-        _lifetime = lifetime;
         _optsZoho = optsZoho;
     }
 
@@ -28,12 +27,31 @@ public class Worker : BackgroundService
         string projectId = "wayfine-ef146";
         FirestoreDb db = FirestoreDb.Create(projectId);
 
+        _logger.LogInformation("Worker started. Running every {Interval} minutes.", _interval.TotalMinutes);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ProcessPendingRequestsAsync(db, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing pending requests");
+            }
+
+            await Task.Delay(_interval, stoppingToken);
+        }
+    }
+
+    private async Task ProcessPendingRequestsAsync(FirestoreDb db, CancellationToken stoppingToken)
+    {
         CollectionReference requests = db.Collection("requests");
         Query pendingQuery = requests.WhereEqualTo("status", "pending");
 
-        QuerySnapshot pendingSnapshot = await pendingQuery.GetSnapshotAsync();
+        QuerySnapshot pendingSnapshot = await pendingQuery.GetSnapshotAsync(stoppingToken);
 
-        Console.WriteLine($"Found {pendingSnapshot.Count} pending requests.");
+        _logger.LogInformation("Found {Count} pending requests.", pendingSnapshot.Count);
 
         foreach (DocumentSnapshot doc in pendingSnapshot.Documents)
         {
@@ -42,7 +60,7 @@ public class Worker : BackgroundService
             string id = doc.Id;
             string userId = data.ContainsKey("userId") ? data["userId"]?.ToString() ?? "" : "";
 
-            Console.WriteLine($"DocId: {id}, userId: {userId}");
+            _logger.LogInformation("Processing DocId: {Id}, userId: {UserId}", id, userId);
 
             DocumentReference docRef = db.Collection("users").Document(userId);
             DocumentSnapshot userData = await docRef.GetSnapshotAsync();
@@ -77,7 +95,7 @@ public class Worker : BackgroundService
                     ? gp
                     : default;
 
-            Console.WriteLine($"Location: ({location.Latitude}, {location.Longitude})");
+            _logger.LogDebug("Location: ({Latitude}, {Longitude})", location.Latitude, location.Longitude);
 
             var dto = new RegistrationModel();
             dto.FirstName = firstName;
@@ -105,21 +123,21 @@ public class Worker : BackgroundService
                         ? Convert.ToInt32(fert["quantity"])
                         : 0;
 
-                    Console.WriteLine($"fertId={fertilizerId}, qty={quantity}");
+                    _logger.LogDebug("fertId={FertilizerId}, qty={Quantity}", fertilizerId, quantity);
 
                     products.Add(new ProductEntry() { TypesOfFertilizersId = fertilizerId, Quantity = quantity });
                 }
             }
 
-            var crops = new List<string>();
+            var cropsList = new List<string>();
             if (doc.ContainsField("cropsGrown"))
             {
-                crops = doc.GetValue<List<string>>("cropsGrown");
-                Console.WriteLine("cropsGrown: " + string.Join(", ", crops));
+                cropsList = doc.GetValue<List<string>>("cropsGrown");
+                _logger.LogDebug("cropsGrown: {Crops}", string.Join(", ", cropsList));
             }
 
             dto.TypesOfFertilizersEntries = products;
-            dto.SelectedCropsGrown = crops;
+            dto.SelectedCropsGrown = cropsList;
 
             try
             {
@@ -148,39 +166,30 @@ public class Worker : BackgroundService
                     }
                 }
 
+                var crops = dto.SelectedCropsGrown != null && dto.SelectedCropsGrown.Any()
+                    ? string.Join(", ", dto.SelectedCropsGrown)
+                    : "<i>Not provided</i>";
+                var fertilizers = products != null && products.Any()
+                    ? string.Join(", ", products.Select(p => $"{p.TypesOfFertilizersId} x{p.Quantity}"))
+                    : "<i>Not provided</i>";
+                var details = !string.IsNullOrWhiteSpace(dto.Details)
+                    ? dto.Details
+                    : "<i>Not provided</i>";
+
                 var msg =
-           $@"<b>🆕 New Registration (MobileApp)</b>
-
-            <b>👤 Farmer</b>
-            • <b>First name:</b> {dto.FirstName}
-            • <b>Second name:</b> {dto.SecondName}
-            • <b>Phone:</b> <code>{dto.ToNormalizedZambia()}</code>
-
-            <b>🚜 Farm</b>
-            • <b>Size (ha):</b> {dto.SelectedSizeOfFarm}
-            • <b>Location:</b> {dto.Location}
-
-            <b>🌱 Crops grown</b>
-            {(dto.SelectedCropsGrown != null && dto.SelectedCropsGrown.Any()
-               ? string.Join("\n", dto.SelectedCropsGrown)
-               : "<i>Not provided</i>")}
-
-            <b>🧪 Fertilizers</b>
-            {(products != null && products.Any()
-               ? string.Join("\n", products.Select(p => $"{p.TypesOfFertilizersId} x{p.Quantity}"))
-               : "<i>Not provided</i>")}
-
-            <b>📝 Details</b>
-            {(string.IsNullOrWhiteSpace(dto.Details)
-               ? "<i>Not provided</i>"
-               : dto.Details)}";
+$@"<b>🆕 New Registration (MobileApp)</b>
+👤 {dto.FirstName} {dto.SecondName} | <code>{dto.ToNormalizedZambia()}</code>
+🚜 {dto.SelectedSizeOfFarm} | {dto.Location}
+🌱 {crops}
+🧪 {fertilizers}
+📝 {details}";
 
                 TelegramNotifier.SendHtmlAsync(msg).Wait();
             }
             catch (Exception ex)
             {
                 TelegramNotifier.SendHtmlAsync($"Zoho CRM from MobileApp: {ex.Message}").Wait();
-                Console.WriteLine($"Error integrating with Zoho: {ex.Message}");
+                _logger.LogError(ex, "Error integrating with Zoho");
             }
 
             await doc.Reference.UpdateAsync(new Dictionary<string, object>
@@ -188,8 +197,6 @@ public class Worker : BackgroundService
                 { "status", "inProgress" }
             });
         }
-
-        _lifetime.StopApplication();
     }
 
     public async Task<byte[]> DownloadImageAsync(string url)

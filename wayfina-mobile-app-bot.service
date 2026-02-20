@@ -1,0 +1,15 @@
+[Unit]
+Description=Wayfina Mobile App Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/wayfina-mobile-app-bot
+ExecStart=/usr/bin/dotnet /opt/wayfina-mobile-app-bot/WayfinaMobileAppBot.dll
+Restart=always
+RestartSec=10
+Environment=DOTNET_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target

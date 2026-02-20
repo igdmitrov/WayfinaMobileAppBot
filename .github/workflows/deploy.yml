@@ -1,0 +1,51 @@
+name: Deploy to Linux Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore WayfinaMobileAppBot.csproj
+
+      - name: Publish
+        run: dotnet publish WayfinaMobileAppBot.csproj -c Release -o ./publish
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "publish/*"
+          target: "/tmp/wayfina-deploy"
+          strip_components: 1
+
+      - name: Deploy and restart service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            sudo systemctl stop wayfina-mobile-app-bot || true
+            sudo cp -r /tmp/wayfina-deploy/* /opt/wayfina-mobile-app-bot/
+            sudo chown -R www-data:www-data /opt/wayfina-mobile-app-bot
+            sudo systemctl start wayfina-mobile-app-bot
+            sudo systemctl status wayfina-mobile-app-bot
+            rm -rf /tmp/wayfina-deploy
