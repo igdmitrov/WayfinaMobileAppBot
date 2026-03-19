@@ -139,6 +139,11 @@ public class Worker : BackgroundService
             dto.TypesOfFertilizersEntries = products;
             dto.SelectedCropsGrown = cropsList;
 
+            await doc.Reference.UpdateAsync(new Dictionary<string, object>
+            {
+                { "status", "inProgress" }
+            });
+
             try
             {
                 var zohoIntegration = new ZohoIntegration(_optsZoho.Value);
@@ -188,14 +193,17 @@ $@"<b>🆕 New Registration (MobileApp)</b>
             }
             catch (Exception ex)
             {
-                TelegramNotifier.SendHtmlAsync($"Zoho CRM from MobileApp: {ex.Message}").Wait();
                 _logger.LogError(ex, "Error integrating with Zoho");
-            }
 
-            await doc.Reference.UpdateAsync(new Dictionary<string, object>
-            {
-                { "status", "inProgress" }
-            });
+                try
+                {
+                    TelegramNotifier.SendHtmlAsync($"Zoho CRM from MobileApp: {ex.Message}").Wait();
+                }
+                catch (Exception telegramEx)
+                {
+                    _logger.LogError(telegramEx, "Failed to send Telegram error notification");
+                }
+            }
         }
     }
 
